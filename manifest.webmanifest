@@ -1,0 +1,9 @@
+{
+  "name": "DER FLIGHT LOG STEP2 確認用",
+  "short_name": "DER STEP2",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f4f6f9",
+  "theme_color": "#172B49",
+  "lang": "ja"
+}
