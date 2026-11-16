@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#172B49">
+  <title>DER FLIGHT LOG｜操縦者管理（確認用）</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">DER FLIGHT LOG</div>
+    <div class="env">STEP2 確認用｜操縦者管理</div>
+  </header>
+  <main class="container">
+    <section class="notice">
+      <strong>独立確認ページ</strong>
+      <p>このページは機体管理とは独立して操縦者情報を確認します。</p>
+      <p><a href="./index.html">機体管理の確認ページへ戻る</a></p>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <h1>操縦者管理</h1>
+        <button id="newPilotButton" class="primary">＋ 操縦者を登録</button>
+      </div>
+      <p id="dbStatus" class="muted" role="status">データベースを確認しています…</p>
+      <div id="pilotList" class="list"></div>
+      <p id="emptyMessage" class="empty" hidden>登録されている操縦者はいません。</p>
+    </section>
+
+    <section id="editorPanel" class="panel" hidden>
+      <div class="section-heading">
+        <h2 id="editorTitle">操縦者を登録</h2>
+        <button id="closeEditorButton" class="subtle">閉じる</button>
+      </div>
+      <form id="pilotForm">
+        <input type="hidden" id="pilotId">
+        <div class="form-grid">
+          <label>氏名 <span class="required">必須</span>
+            <input id="name" type="text" required maxlength="120" autocomplete="name">
+          </label>
+          <label>技能証明の有無 <span class="required">必須</span>
+            <select id="hasLicense" required>
+              <option value="">選択してください</option>
+              <option value="true">あり</option>
+              <option value="false">なし</option>
+            </select>
+          </label>
+          <label>技能証明の種類
+            <input id="licenseType" type="text" maxlength="120">
+            <small>任意入力です。自由に入力できます。</small>
+          </label>
+          <label>使用状態
+            <select id="status" required>
+              <option value="使用中">使用中</option>
+              <option value="使用停止">使用停止</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="licenseNumberFields" class="conditional-box" hidden>
+          <h3>技能証明の情報</h3>
+          <p class="muted">技能証明が「あり」の場合、番号を入力してください。</p>
+          <label>技能証明番号 <span class="required">必須</span>
+            <input id="licenseNumber" type="text" maxlength="120">
+          </label>
+        </div>
+
+        <div id="editReasonFields" class="full-width" hidden>
+          <label>編集理由（任意）
+            <textarea id="editReason" rows="2" maxlength="1000"></textarea>
+            <small>編集時のみ入力できます。入力内容は編集履歴に保存されます。</small>
+          </label>
+        </div>
+        <label class="full-width">備考
+          <textarea id="notes" rows="3" maxlength="2000"></textarea>
+        </label>
+        <div class="actions">
+          <button type="submit" class="primary">保存する</button>
+          <button type="button" id="cancelEditButton" class="subtle">キャンセル</button>
+        </div>
+        <p id="formMessage" class="form-message" role="alert"></p>
+      </form>
+    </section>
+  </main>
+  <footer>DER FLIGHT LOG｜STEP2 確認用</footer>
+  <script type="module" src="./pilots.js"></script>
+</body>
+</html>

@@ -1,10 +1,12 @@
-const CACHE_NAME = "DER_STEP2_CACHE_v2";
+const CACHE_NAME = "DER_STEP2_CACHE_v5";
 const FILES_TO_CACHE = [
   "./",
   "./index.html",
+  "./pilots.html",
   "./styles.css",
   "./db.js",
   "./aircraft.js",
+  "./pilots.js",
   "./manifest.webmanifest"
 ];
 
@@ -18,8 +20,7 @@ self.addEventListener("install", event => {
 self.addEventListener("activate", event => {
   event.waitUntil((async () => {
     const names = await caches.keys();
-    // DER_STEP2_CACHE_ で始まる確認用キャッシュだけを整理する。
-    // STEP1側のキャッシュには触れない。
+    // DER_STEP2_CACHE_ で始まる確認用キャッシュだけを整理する。STEP1側には触れない。
     await Promise.all(names
       .filter(name => name.startsWith("DER_STEP2_CACHE_") && name !== CACHE_NAME)
       .map(name => caches.delete(name)));
