@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#172B49">
+  <title>DER FLIGHT LOG｜飛行記録（確認用）</title>
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">DER FLIGHT LOG</div>
+    <div class="env">STEP2 確認用｜飛行記録</div>
+  </header>
+
+  <main class="container">
+    <section class="notice">
+      <strong>独立確認ページ</strong>
+      <p>このページは飛行記録の下書きを確認するためのページです。</p>
+      <p>
+        <a href="./index.html">機体管理の確認ページへ</a>
+        ｜
+        <a href="./pilots.html">操縦者管理の確認ページへ</a>
+      </p>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <h1>飛行記録</h1>
+        <button id="newFlightButton" class="primary">＋ 飛行記録を作成</button>
+      </div>
+
+      <p id="dbStatus" class="muted" role="status">データベースを確認しています…</p>
+      <div id="flightList" class="list"></div>
+      <p id="emptyMessage" class="empty" hidden>飛行記録はありません。</p>
+    </section>
+
+    <section id="editorPanel" class="panel" hidden>
+      <div class="section-heading">
+        <h2 id="editorTitle">飛行記録を作成</h2>
+        <button id="closeEditorButton" class="subtle">閉じる</button>
+      </div>
+
+      <form id="flightForm">
+        <input type="hidden" id="flightId">
+
+        <h3>基本情報</h3>
+        <div class="form-grid">
+          <label>使用する機体
+            <select id="aircraftId">
+              <option value="">選択してください</option>
+            </select>
+          </label>
+
+          <label>操縦者
+            <select id="pilotId">
+              <option value="">選択してください</option>
+            </select>
+          </label>
+
+          <label>飛行の目的
+            <input id="purpose" type="text" maxlength="1000">
+          </label>
+
+          <label>飛行経路
+            <textarea id="route" rows="3" maxlength="3000"></textarea>
+          </label>
+
+          <label>経由地
+            <textarea id="waypoints" rows="3" maxlength="3000"></textarea>
+          </label>
+        </div>
+
+        <h3>空域・飛行の方法</h3>
+        <div class="form-grid">
+          <label>飛行禁止空域
+            <textarea id="prohibitedAirspace" rows="3" maxlength="3000"></textarea>
+          </label>
+
+          <label class="full-width">
+            <span>
+              <input type="checkbox" id="prohibitedAirspaceNone">
+              飛行禁止空域は該当なし
+            </span>
+          </label>
+
+          <label>飛行の方法
+            <textarea id="flightMethod" rows="3" maxlength="3000"></textarea>
+          </label>
+
+          <label class="full-width">
+            <span>
+              <input type="checkbox" id="flightMethodNone">
+              飛行の方法は該当なし
+            </span>
+          </label>
+        </div>
+
+        <h3>離着陸情報</h3>
+        <div class="form-grid">
+          <label>離陸場所
+            <input id="takeoffLocation" type="text" maxlength="1000">
+          </label>
+
+          <label>離陸日時
+            <input id="takeoffAt" type="datetime-local">
+          </label>
+
+          <label>着陸場所
+            <input id="landingLocation" type="text" maxlength="1000">
+          </label>
+
+          <label>着陸日時
+            <input id="landingAt" type="datetime-local">
+          </label>
+        </div>
+
+        <h3>安全に関する記録</h3>
+        <div class="form-grid">
+          <label>安全に影響した事項の有無
+            <select id="safetyIssue">
+              <option value="">選択してください</option>
+              <option value="なし">なし</option>
+              <option value="あり">あり</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="safetyDetailsFields" class="conditional-box" hidden>
+          <h3>安全に関する詳細</h3>
+
+          <label>安全に影響した事項の内容
+            <textarea id="safetyDetails" rows="3" maxlength="3000"></textarea>
+          </label>
+
+          <label>飛行前後の機体の状態
+            <textarea id="aircraftCondition" rows="3" maxlength="3000"></textarea>
+          </label>
+        </div>
+
+        <h3>その他</h3>
+        <label class="full-width">特記事項
+          <textarea id="specialNotes" rows="3" maxlength="3000"></textarea>
+        </label>
+
+        <div class="actions">
+          <button type="submit" class="primary">下書きを保存する</button>
+          <button type="button" id="cancelEditButton" class="subtle">キャンセル</button>
+        </div>
+
+        <p id="formMessage" class="form-message" role="alert"></p>
+      </form>
+    </section>
+  </main>
+
+  <footer>DER FLIGHT LOG｜STEP2 確認用</footer>
+
+  <script type="module" src="./flights.js"></script>
+</body>
+</html>
