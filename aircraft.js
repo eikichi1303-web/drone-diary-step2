@@ -236,21 +236,51 @@ async function deleteAircraft(record) {
   if (!confirmed) return;
 
   try {
-    // 工程5・12で保存領域が追加されるまでは、両方とも0件として扱う。
-    // 先に保存領域が存在する場合は、参照フィールド未確定のまま削除しない。
-    const futureStores = ["flightRecords", "defects"].filter(name => db.objectStoreNames.contains(name));
-    if (futureStores.length) {
-      throw new Error("飛行記録または不具合の保存領域が存在します。削除判定を該当工程の仕様に合わせて更新するまで、安全のため削除を停止します。");
+    // 工程12の不具合保存領域が存在する場合は、従来どおり削除を停止する。
+    if (db.objectStoreNames.contains("defects")) {
+      throw new Error("不具合の保存領域が存在するため、機体の削除を停止しました。");
     }
 
-    const tx = db.transaction(["aircraft", "editHistories"], "readwrite");
+    // 工程5で追加された飛行記録を、対象機体のaircraftId索引で確認する。
+    if (!db.objectStoreNames.contains("flightRecords")) {
+      throw new Error("飛行記録の保存領域が見つかりません。安全のため機体の削除を停止しました。");
+    }
+
+    // 飛行記録の確認と機体・編集履歴の削除を同一トランザクションで行う。
+    const tx = db.transaction(
+      ["aircraft", "editHistories", "flightRecords"],
+      "readwrite"
+    );
+    const done = transactionDone(tx);
     const aircraftStore = tx.objectStore("aircraft");
     const histories = tx.objectStore("editHistories");
-    const current = await requestResult(aircraftStore.get(record.id));
-    if (!current) throw new Error("削除対象の機体が見つかりません。");
+    const flightRecords = tx.objectStore("flightRecords");
+
+    const currentRequest = aircraftStore.get(record.id);
+    const flightCountRequest = flightRecords.index("aircraftId").count(
+      IDBKeyRange.only(record.id)
+    );
+
+    const [current, flightCount] = await Promise.all([
+      requestResult(currentRequest),
+      requestResult(flightCountRequest)
+    ]);
+
+    if (!current) {
+      await done;
+      throw new Error("削除対象の機体が見つかりません。");
+    }
+
+    if (flightCount > 0) {
+      await done;
+      throw new Error("この機体に紐づく飛行記録が存在するため、削除できません。");
+    }
 
     aircraftStore.delete(record.id);
-    const cursorRequest = histories.index("recordId").openCursor(IDBKeyRange.only(record.id));
+
+    const cursorRequest = histories.index("recordId").openCursor(
+      IDBKeyRange.only(record.id)
+    );
     cursorRequest.onsuccess = () => {
       const cursor = cursorRequest.result;
       if (cursor) {
@@ -258,7 +288,8 @@ async function deleteAircraft(record) {
         cursor.continue();
       }
     };
-    await transactionDone(tx);
+
+    await done;
     await renderAircraft();
     $("dbStatus").textContent = "機体と関連する編集履歴を削除しました。";
   } catch (error) {
