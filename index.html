@@ -13,12 +13,18 @@
     <div class="brand">DER FLIGHT LOG</div>
     <div class="env">STEP2 確認用｜機体管理</div>
   </header>
+
   <main class="container">
     <section class="notice">
       <strong>独立確認ページ</strong>
       <p>このページはホーム画面とは接続していません。直接アドレスを開いて機体管理を確認します。</p>
-      <p><a href="./pilots.html">操縦者管理の確認ページへ</a></p>
+      <p>
+        <a href="./pilots.html">操縦者管理の確認ページへ</a>
+        ｜
+        <a href="./flights.html">飛行記録の確認ページへ</a>
+      </p>
     </section>
+
     <section class="panel">
       <div class="section-heading">
         <h1>機体管理</h1>
@@ -28,6 +34,7 @@
       <div id="aircraftList" class="list"></div>
       <p id="emptyMessage" class="empty" hidden>登録されている機体はありません。</p>
     </section>
+
     <section id="editorPanel" class="panel" hidden>
       <div class="section-heading">
         <h2 id="editorTitle">機体を登録</h2>
@@ -36,6 +43,7 @@
 
       <form id="aircraftForm">
         <input type="hidden" id="aircraftId">
+
         <div class="form-grid">
           <label>機体名・呼称 <span class="required">必須</span>
             <input id="name" type="text" required maxlength="120">
@@ -62,6 +70,7 @@
             </select>
           </label>
         </div>
+
         <div id="aircraftCertificationFields" class="conditional-box" hidden>
           <h3>機体認証の情報</h3>
           <p class="muted">機体認証が「あり」の場合に入力してください。</p>
@@ -74,6 +83,7 @@
             </label>
           </div>
         </div>
+
         <div class="form-grid">
           <label>設計製造者 <span class="required">必須</span>
             <input id="manufacturer" type="text" required maxlength="120">
@@ -103,6 +113,7 @@
             </select>
           </label>
         </div>
+
         <label class="full-width">備考
           <textarea id="notes" rows="3" maxlength="2000"></textarea>
         </label>
@@ -110,6 +121,7 @@
         <label id="editReasonWrap" class="full-width" hidden>編集理由（任意）
           <input id="editReason" type="text" maxlength="500">
         </label>
+
         <div class="actions">
           <button type="submit" class="primary">保存する</button>
           <button type="button" id="cancelEditButton" class="subtle">キャンセル</button>
