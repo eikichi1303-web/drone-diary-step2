@@ -215,20 +215,47 @@ async function deletePilot(record) {
   if (!confirmed) return;
 
   try {
-    // 工程5でflightRecordsが追加されるまでは0件として扱う。
-    // 保存領域が存在する場合は、関連付け仕様が確定していないため安全のため削除を停止する。
-    if (db.objectStoreNames.contains("flightRecords")) {
-      throw new Error("飛行記録の保存領域が存在します。飛行記録との関連を確認する仕様が確定するまで、安全のため削除を停止します。");
+    // 工程5で追加された飛行記録の保存領域を確認する。
+    if (!db.objectStoreNames.contains("flightRecords")) {
+      throw new Error("飛行記録の保存領域が見つかりません。安全のため操縦者の削除を停止しました。");
     }
 
-    const tx = db.transaction(["pilots", "editHistories"], "readwrite");
+    // 飛行記録の確認と操縦者・編集履歴の削除を同一トランザクションで行う。
+    const tx = db.transaction(
+      ["pilots", "editHistories", "flightRecords"],
+      "readwrite"
+    );
+    const done = transactionDone(tx);
+
     const pilotStore = tx.objectStore("pilots");
     const histories = tx.objectStore("editHistories");
-    const current = await requestResult(pilotStore.get(record.id));
-    if (!current) throw new Error("削除対象の操縦者が見つかりません。");
+    const flightRecords = tx.objectStore("flightRecords");
+
+    const currentRequest = pilotStore.get(record.id);
+    const flightCountRequest = flightRecords.index("pilotId").count(
+      IDBKeyRange.only(record.id)
+    );
+
+    const [current, flightCount] = await Promise.all([
+      requestResult(currentRequest),
+      requestResult(flightCountRequest)
+    ]);
+
+    if (!current) {
+      await done;
+      throw new Error("削除対象の操縦者が見つかりません。");
+    }
+
+    if (flightCount > 0) {
+      await done;
+      throw new Error("この操縦者に紐づく飛行記録が存在するため、削除できません。");
+    }
 
     pilotStore.delete(record.id);
-    const cursorRequest = histories.index("recordId").openCursor(IDBKeyRange.only(record.id));
+
+    const cursorRequest = histories.index("recordId").openCursor(
+      IDBKeyRange.only(record.id)
+    );
     cursorRequest.onsuccess = () => {
       const cursor = cursorRequest.result;
       if (cursor) {
@@ -238,7 +265,7 @@ async function deletePilot(record) {
       }
     };
 
-    await transactionDone(tx);
+    await done;
     await renderPilots();
     $("dbStatus").textContent = "操縦者と関連する編集履歴を削除しました。";
   } catch (error) {
