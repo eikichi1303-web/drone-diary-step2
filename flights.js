@@ -201,11 +201,18 @@ function newRecord(fields, status, now) {
 }
 
 function createTransactionWaiter(tx, getFailureReason = () => "") {
-  return new Promise((resolve, reject) => {
+  const waiter = new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();
     tx.onabort = () => reject(new Error(getFailureReason() || tx.error?.message || "データベース処理を取り消しました。"));
     tx.onerror = () => reject(new Error(getFailureReason() || tx.error?.message || "データベース処理に失敗しました。"));
   });
+
+  // requestResultなど別の非同期処理が先に失敗して呼び出し元が抜けても、
+  // 後からtransaction waiterがrejectされた際にunhandled rejectionにならないよう、
+  // ここで拒否ハンドラーを登録する。waiter自体のrejectは維持されるため、
+  // await waiterを行う通常経路では引き続きエラーを呼び出し元へ通知する。
+  waiter.catch(() => {});
+  return waiter;
 }
 
 async function saveFlight(event) {
@@ -321,6 +328,10 @@ async function recordLanding() {
     if (!$("flightId").value || currentEditStatus !== "飛行中") return;
     if ($("landingAt").value && !window.confirm("入力されている着陸日時を現在時刻で上書きしますか？")) return;
     const fields = collectFormFields();
+    if (!fields.aircraftId || !fields.pilotId || !fields.takeoffAt) {
+      showMessage("着陸を記録するには、機体・操縦者・離陸日時が必要です。");
+      return;
+    }
     const nowDate = new Date();
     nowDate.setSeconds(0, 0);
     const now = nowDate.toISOString();
