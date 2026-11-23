@@ -17,7 +17,7 @@
   <main class="container">
     <section class="notice">
       <strong>独立確認ページ</strong>
-      <p>このページは飛行記録の下書きを確認するためのページです。</p>
+      <p>このページは飛行記録の下書き・飛行中の記録を確認するためのページです。</p>
       <p>
         <a href="./index.html">機体管理の確認ページへ</a>
         ｜
@@ -145,7 +145,9 @@
         </label>
 
         <div class="actions">
-          <button type="submit" class="primary">下書きを保存する</button>
+          <button type="button" id="takeoffButton" class="primary" hidden>離陸</button>
+          <button type="button" id="landingButton" class="primary" hidden>着陸</button>
+          <button type="submit" id="saveFlightButton" class="primary">下書きを保存する</button>
           <button type="button" id="cancelEditButton" class="subtle">キャンセル</button>
         </div>
 
