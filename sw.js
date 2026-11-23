@@ -1,4 +1,4 @@
-const CACHE_NAME = "DER_STEP2_CACHE_v10";
+const CACHE_NAME = "DER_STEP2_CACHE_v12";
 
 const FILES_TO_CACHE = [
   "./",
