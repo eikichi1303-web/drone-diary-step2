@@ -17,7 +17,7 @@
   <main class="container">
     <section class="notice">
       <strong>独立確認ページ</strong>
-      <p>このページは飛行記録の下書き・飛行中の記録を確認するためのページです。</p>
+      <p>このページは飛行記録の一時保存・飛行中の記録を確認するためのページです。</p>
       <p>
         <a href="./index.html">機体管理の確認ページへ</a>
         ｜
@@ -114,6 +114,11 @@
           <label>着陸日時
             <input id="landingAt" type="datetime-local">
           </label>
+
+          <label>飛行時間（分）
+            <input id="flightMinutesInput" type="number" min="0" step="1" inputmode="numeric">
+            <small>空欄なら着陸−離陸から自動計算されます。0は1分として保存されます。保存ボタンを押すと反映されます（着陸ボタンでは保存されません）</small>
+          </label>
         </div>
 
         <h3>安全に関する記録</h3>
@@ -147,7 +152,7 @@
         <div class="actions">
           <button type="button" id="takeoffButton" class="primary" hidden>離陸</button>
           <button type="button" id="landingButton" class="primary" hidden>着陸</button>
-          <button type="submit" id="saveFlightButton" class="primary">下書きを保存する</button>
+          <button type="submit" id="saveFlightButton" class="primary">一時保存する</button>
           <button type="button" id="cancelEditButton" class="subtle">キャンセル</button>
         </div>
 

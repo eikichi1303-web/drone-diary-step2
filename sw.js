@@ -1,4 +1,4 @@
-const CACHE_NAME = "DER_STEP2_CACHE_v12";
+const CACHE_NAME = "DER_STEP2_CACHE_v14";
 
 const FILES_TO_CACHE = [
   "./",
@@ -10,6 +10,7 @@ const FILES_TO_CACHE = [
   "./aircraft.js",
   "./pilots.js",
   "./flights.js",
+  "./flightTime.js",
   "./manifest.webmanifest"
 ];
 

@@ -1,4 +1,5 @@
 import { openStep2Database, requestResult, transactionDone } from "./db.js";
+import { calculateAircraftTotalFlightMinutes } from "./flightTime.js";
 
 const $ = id => document.getElementById(id);
 let db;
@@ -109,6 +110,22 @@ function sameData(a, b) {
   return JSON.stringify(comparableAircraft(a)) === JSON.stringify(comparableAircraft(b));
 }
 
+async function countFlightsForAircraft(tx, aircraftId) {
+  return requestResult(
+    tx.objectStore("flightRecords").index("aircraftId").count(IDBKeyRange.only(aircraftId))
+  );
+}
+
+function createTransactionWaiter(tx, getFailureReason = () => "") {
+  const waiter = new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onabort = () => reject(new Error(getFailureReason() || tx.error?.message || "データベース処理を取り消しました。"));
+    tx.onerror = () => reject(new Error(getFailureReason() || tx.error?.message || "データベース処理に失敗しました。"));
+  });
+  waiter.catch(() => {});
+  return waiter;
+}
+
 async function saveAircraft(event) {
   event.preventDefault();
   try {
@@ -140,6 +157,18 @@ async function saveAircraft(event) {
         return;
       }
 
+      const initialTotalChanged = current.initialTotalFlightMinutes !== formData.initialTotalFlightMinutes;
+      let confirmedWithFlights = false;
+      if (initialTotalChanged) {
+        const countTx = db.transaction(["flightRecords"], "readonly");
+        const flightCount = await countFlightsForAircraft(countTx, id);
+        await transactionDone(countTx);
+        if (flightCount > 0) {
+          confirmedWithFlights = window.confirm("この機体には飛行記録があります。登録時点の総飛行時間を変更すると、表示される総飛行時間も変わります。変更しますか？");
+          if (!confirmedWithFlights) return;
+        }
+      }
+
       const history = {
         id: uuidV4(),
         recordType: "aircraft",
@@ -156,10 +185,21 @@ async function saveAircraft(event) {
         updatedAt: now
       };
 
-      const tx = db.transaction(["aircraft", "editHistories"], "readwrite");
+      const tx = db.transaction(["aircraft", "editHistories", "flightRecords"], "readwrite");
+      let saveFailureReason = "";
+      const done = createTransactionWaiter(tx, () => saveFailureReason);
+      if (initialTotalChanged) {
+        const flightCount = await countFlightsForAircraft(tx, id);
+        if (flightCount > 0 && !confirmedWithFlights) {
+          saveFailureReason = "保存時に飛行記録が確認されました。初期総飛行時間の変更について、もう一度確認してください。";
+          tx.abort();
+          try { await done; } catch (_) {}
+          throw new Error(saveFailureReason);
+        }
+      }
       tx.objectStore("editHistories").add(history);
       tx.objectStore("aircraft").put(updated);
-      await transactionDone(tx);
+      await done;
       var saveResultMessage = "機体情報を更新し、編集履歴を保存しました。";
     }
 
@@ -172,15 +212,23 @@ async function saveAircraft(event) {
 }
 
 async function renderAircraft() {
-  const tx = db.transaction(["aircraft"], "readonly");
-  const records = await requestResult(tx.objectStore("aircraft").getAll());
-  await transactionDone(tx);
+  const aircraftTx = db.transaction(["aircraft"], "readonly");
+  const records = await requestResult(aircraftTx.objectStore("aircraft").getAll());
+  await transactionDone(aircraftTx);
   records.sort((a, b) => (a.name || "").localeCompare(b.name || "", "ja"));
   const list = $("aircraftList");
   list.replaceChildren();
   $("emptyMessage").hidden = records.length !== 0;
 
   for (const record of records) {
+    const flightsTx = db.transaction(["flightRecords"], "readonly");
+    const flightRecords = await requestResult(flightsTx.objectStore("flightRecords").getAll());
+    await transactionDone(flightsTx);
+    const totalMinutes = calculateAircraftTotalFlightMinutes(
+      record,
+      flightRecords.filter(item => item.aircraftId === record.id)
+    );
+
     const card = document.createElement("article");
     card.className = "aircraft-card";
     const info = document.createElement("div");
@@ -192,7 +240,7 @@ async function renderAircraft() {
     title.append(" ", badge);
     const meta = document.createElement("div");
     meta.className = "card-meta";
-    meta.textContent = `登録記号：${record.registrationMark}｜製造番号：${record.serialNumber}｜登録時点の総飛行時間：${formatMinutes(record.initialTotalFlightMinutes)}`;
+    meta.textContent = `登録記号：${record.registrationMark}｜製造番号：${record.serialNumber}｜総飛行時間：${formatMinutes(totalMinutes)}`;
     info.append(title, meta);
 
     const actions = document.createElement("div");
@@ -216,7 +264,7 @@ function formatMinutes(total) {
   return `${Math.floor(value / 60)}時間${value % 60}分`;
 }
 
-function beginEdit(record) {
+async function beginEdit(record) {
   $("aircraftId").value = record.id;
   for (const id of [
     "name", "registrationMark", "aircraftType", "model", "typeCertificationNumber",
@@ -236,17 +284,14 @@ async function deleteAircraft(record) {
   if (!confirmed) return;
 
   try {
-    // 工程12の不具合保存領域が存在する場合は、従来どおり削除を停止する。
     if (db.objectStoreNames.contains("defects")) {
       throw new Error("不具合の保存領域が存在するため、機体の削除を停止しました。");
     }
 
-    // 工程5で追加された飛行記録を、対象機体のaircraftId索引で確認する。
     if (!db.objectStoreNames.contains("flightRecords")) {
       throw new Error("飛行記録の保存領域が見つかりません。安全のため機体の削除を停止しました。");
     }
 
-    // 飛行記録の確認と機体・編集履歴の削除を同一トランザクションで行う。
     const tx = db.transaction(
       ["aircraft", "editHistories", "flightRecords"],
       "readwrite"

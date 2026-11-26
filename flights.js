@@ -3,12 +3,27 @@ import {
   requestResult,
   transactionDone
 } from "./db.js";
+import {
+  normalizeFlightMinutes,
+  isValidFlightMinutes
+} from "./flightTime.js";
 
 const $ = id => document.getElementById(id);
 
 let db;
 let currentEditStatus = "下書き";
 let flightActionInProgress = false;
+let editStartedUpdatedAt = "";
+
+const STATUS_LABELS = {
+  "下書き": "一時保存",
+  "飛行中": "飛行中"
+  // 工程8で「完了」を追加する。
+};
+
+function displayStatus(status) {
+  return STATUS_LABELS[status] || status;
+}
 
 function uuidV4() {
   if (crypto.randomUUID) return crypto.randomUUID();
@@ -31,8 +46,8 @@ function showMessage(message, isError = true) {
 function showEditor(editing = false) {
   $("editorPanel").hidden = false;
   $("editorTitle").textContent = editing
-    ? (currentEditStatus === "飛行中" ? "飛行中の記録を続ける" : "飛行記録の下書きを編集")
-    : "飛行記録の下書き";
+    ? (currentEditStatus === "飛行中" ? "飛行中の記録を続ける" : "飛行記録の一時保存を編集")
+    : "飛行記録の一時保存";
   $("formMessage").textContent = "";
   updateActionButtons();
   $("editorPanel").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -42,6 +57,7 @@ function closeEditor() {
   $("flightForm").reset();
   $("flightId").value = "";
   currentEditStatus = "下書き";
+  editStartedUpdatedAt = "";
   $("safetyDetailsFields").hidden = true;
   $("prohibitedAirspace").disabled = false;
   $("flightMethod").disabled = false;
@@ -82,7 +98,7 @@ function updateActionButtons() {
   $("saveFlightButton").disabled = flightActionInProgress;
   $("takeoffButton").hidden = isFlying;
   $("landingButton").hidden = !isFlying;
-  $("saveFlightButton").textContent = isFlying ? "保存する" : "下書きを保存する";
+  $("saveFlightButton").textContent = isFlying ? "保存する" : "一時保存する";
 }
 
 function japanDateTimeToUTC(value) {
@@ -190,6 +206,29 @@ function collectFormFields() {
   };
 }
 
+function collectFlightTimeFields() {
+  const raw = $("flightMinutesInput").value.trim();
+  if (raw === "") {
+    return { flightMinutes: null, manuallyAdjusted: false };
+  }
+
+  if (!/^\d+$/.test(raw)) {
+    throw new Error("整数で入力してください（0は1分として保存されます）");
+  }
+
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value)) {
+    throw new Error("整数で入力してください（0は1分として保存されます）");
+  }
+
+  const normalized = normalizeFlightMinutes(value);
+  if (!isValidFlightMinutes(normalized)) {
+    throw new Error("整数で入力してください（0は1分として保存されます）");
+  }
+
+  return { flightMinutes: normalized, manuallyAdjusted: true };
+}
+
 function newRecord(fields, status, now) {
   return {
     id: uuidV4(), ...fields,
@@ -206,11 +245,6 @@ function createTransactionWaiter(tx, getFailureReason = () => "") {
     tx.onabort = () => reject(new Error(getFailureReason() || tx.error?.message || "データベース処理を取り消しました。"));
     tx.onerror = () => reject(new Error(getFailureReason() || tx.error?.message || "データベース処理に失敗しました。"));
   });
-
-  // requestResultなど別の非同期処理が先に失敗して呼び出し元が抜けても、
-  // 後からtransaction waiterがrejectされた際にunhandled rejectionにならないよう、
-  // ここで拒否ハンドラーを登録する。waiter自体のrejectは維持されるため、
-  // await waiterを行う通常経路では引き続きエラーを呼び出し元へ通知する。
   waiter.catch(() => {});
   return waiter;
 }
@@ -223,15 +257,18 @@ async function saveFlight(event) {
   let done;
   try {
     const fields = collectFormFields();
+    const flightTimeFields = collectFlightTimeFields();
     const id = $("flightId").value;
     const now = new Date().toISOString();
     if (!id) {
       const record = newRecord(fields, "下書き", now);
+      record.flightMinutes = flightTimeFields.flightMinutes;
+      record.manuallyAdjusted = flightTimeFields.manuallyAdjusted;
       const tx = db.transaction(["flightRecords"], "readwrite");
       done = createTransactionWaiter(tx);
       tx.objectStore("flightRecords").add(record);
       await done;
-      var message = "飛行記録の下書きを保存しました。";
+      var message = "飛行記録の一時保存を保存しました。";
     } else {
       const tx = db.transaction(["flightRecords"], "readwrite");
       let failureReason = "";
@@ -250,16 +287,29 @@ async function saveFlight(event) {
         try { await done; } catch (_) {}
         throw new Error(failureReason);
       }
+      if (editStartedUpdatedAt && current.updatedAt !== editStartedUpdatedAt) {
+        failureReason = "他の画面で更新されました。再読み込みしてください。";
+        tx.abort();
+        try { await done; } catch (_) {}
+        throw new Error(failureReason);
+      }
       if (current.status === "飛行中" && (!fields.aircraftId || !fields.pilotId || !fields.takeoffAt)) {
         failureReason = "飛行中の記録は、機体・操縦者・離陸日時を空欄にできません。";
         tx.abort();
         try { await done; } catch (_) {}
         throw new Error(failureReason);
       }
-      const updated = { ...current, ...fields, updatedAt: now };
+      const updated = {
+        ...current,
+        ...fields,
+        flightMinutes: flightTimeFields.flightMinutes,
+        manuallyAdjusted: flightTimeFields.manuallyAdjusted,
+        revision: current.revision,
+        updatedAt: now
+      };
       store.put(updated);
       await done;
-      var message = current.status === "飛行中" ? "飛行中の記録を保存しました。" : "飛行記録の下書きを更新しました。";
+      var message = current.status === "飛行中" ? "飛行中の記録を保存しました。" : "飛行記録の一時保存を更新しました。";
     }
     await renderFlights();
     closeEditor();
@@ -284,6 +334,7 @@ async function recordTakeoff() {
     }
     if ($("takeoffAt").value && !window.confirm("入力されている離陸日時を現在時刻で上書きしますか？")) return;
     const fields = collectFormFields();
+    const flightTimeFields = collectFlightTimeFields();
     const nowDate = new Date();
     nowDate.setSeconds(0, 0);
     const now = nowDate.toISOString();
@@ -305,12 +356,16 @@ async function recordTakeoff() {
       return;
     }
     if (!id) {
-      store.add(newRecord(fields, "飛行中", now));
+      const record = {
+        ...newRecord(fields, "飛行中", now),
+        ...flightTimeFields
+      };
+      store.add(record);
     } else {
       const current = await requestResult(store.get(id));
       if (!current) { failureReason = "対象の飛行記録が見つかりません。"; tx.abort(); await done; return; }
-      if (current.status !== "下書き") { failureReason = "下書き以外から離陸を記録できません。"; tx.abort(); await done; return; }
-      store.put({ ...current, ...fields, status: "飛行中", updatedAt: now });
+      if (current.status !== "下書き") { failureReason = "一時保存以外から離陸を記録できません。"; tx.abort(); await done; return; }
+      store.put({ ...current, ...fields, ...flightTimeFields, status: "飛行中", updatedAt: now });
     }
     await done;
     await renderFlights();
@@ -353,7 +408,7 @@ async function recordLanding() {
 }
 
 async function returnToDraft(record) {
-  if (!window.confirm("この飛行中の記録を下書きに戻しますか？\n入力内容と離陸・着陸日時は保持されます。")) return;
+  if (!window.confirm("この飛行中の記録を一時保存に戻しますか？\n入力内容と離陸・着陸日時は保持されます。")) return;
   try {
     const tx = db.transaction(["flightRecords"], "readwrite");
     let failureReason = "";
@@ -365,8 +420,8 @@ async function returnToDraft(record) {
     store.put({ ...current, status: "下書き", updatedAt: new Date().toISOString() });
     await done;
     await renderFlights();
-    $("dbStatus").textContent = "飛行中の記録を下書きに戻しました。";
-  } catch (error) { $("dbStatus").textContent = error.message || "下書きに戻せませんでした。"; }
+    $("dbStatus").textContent = "飛行中の記録を一時保存に戻しました。";
+  } catch (error) { $("dbStatus").textContent = error.message || "一時保存に戻せませんでした。"; }
 }
 
 async function renderFlights() {
@@ -384,7 +439,7 @@ async function renderFlights() {
     const title = document.createElement("h3");
     const status = document.createElement("span");
     status.className = "badge" + (record.status === "下書き" ? "" : " stopped");
-    status.textContent = record.status;
+    status.textContent = displayStatus(record.status);
     title.textContent = "飛行記録";
     title.append(" ", status);
     const meta = document.createElement("div");
@@ -408,7 +463,7 @@ async function renderFlights() {
       } else {
         const backButton = document.createElement("button");
         backButton.className = "subtle";
-        backButton.textContent = "下書きに戻す";
+        backButton.textContent = "一時保存に戻す";
         backButton.addEventListener("click", () => returnToDraft(record));
         actions.append(backButton);
       }
@@ -421,6 +476,7 @@ async function renderFlights() {
 async function beginEdit(record) {
   if (record.status !== "下書き" && record.status !== "飛行中") return;
   currentEditStatus = record.status;
+  editStartedUpdatedAt = record.updatedAt || "";
   $("flightId").value = record.id;
   await loadAircraftAndPilots(record.aircraftId || "", record.pilotId || "");
   $("purpose").value = record.purpose ?? "";
@@ -441,6 +497,7 @@ async function beginEdit(record) {
   $("takeoffAt").value = utcToJapanDateTime(record.takeoffAt);
   $("landingLocation").value = record.landingLocation ?? "";
   $("landingAt").value = utcToJapanDateTime(record.landingAt);
+  $("flightMinutesInput").value = record.flightMinutes === null || record.flightMinutes === undefined ? "" : String(record.flightMinutes);
   $("safetyIssue").value = record.safetyIssue ?? "";
   $("safetyDetails").value = record.safetyDetails ?? "";
   $("aircraftCondition").value = record.aircraftCondition ?? "";
@@ -451,7 +508,7 @@ async function beginEdit(record) {
 
 async function deleteFlight(record) {
   if (record.status !== "下書き") return;
-  if (!window.confirm("この飛行記録の下書きを削除します。\nこの操作は元に戻せません。よろしいですか？")) return;
+  if (!window.confirm("この飛行記録の一時保存を削除します。\nこの操作は元に戻せません。よろしいですか？")) return;
   try {
     const tx = db.transaction(["flightRecords"], "readwrite");
     let failureReason = "";
@@ -459,11 +516,11 @@ async function deleteFlight(record) {
     const store = tx.objectStore("flightRecords");
     const current = await requestResult(store.get(record.id));
     if (!current) { failureReason = "対象の飛行記録が見つかりません。"; tx.abort(); await done; return; }
-    if (current.status !== "下書き") { failureReason = "下書き以外の飛行記録は削除できません。"; tx.abort(); await done; return; }
+    if (current.status !== "下書き") { failureReason = "一時保存以外の飛行記録は削除できません。"; tx.abort(); await done; return; }
     store.delete(record.id);
     await done;
     await renderFlights();
-    $("dbStatus").textContent = "飛行記録の下書きを削除しました。";
+    $("dbStatus").textContent = "飛行記録の一時保存を削除しました。";
   } catch (error) {
     $("dbStatus").textContent = error.message || "削除に失敗しました。";
   }
@@ -485,6 +542,7 @@ $("newFlightButton").addEventListener("click", async () => {
   $("flightForm").reset();
   $("flightId").value = "";
   currentEditStatus = "下書き";
+  editStartedUpdatedAt = "";
   $("safetyDetailsFields").hidden = true;
   $("prohibitedAirspace").disabled = false;
   $("flightMethod").disabled = false;
