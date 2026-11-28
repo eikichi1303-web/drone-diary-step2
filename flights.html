@@ -155,12 +155,19 @@
           </label>
         </div>
 
+        <div id="cancelReasonField" class="full-width" hidden>
+          <label>取消理由（必須）
+            <textarea id="cancelReasonInput" rows="3" maxlength="1000"></textarea>
+          </label>
+        </div>
+
         <div class="actions">
           <button type="button" id="takeoffButton" class="primary" hidden>離陸</button>
           <button type="button" id="landingButton" class="primary" hidden>着陸</button>
           <button type="button" id="completeFlightButton" class="primary" hidden>完了にする</button>
           <button type="submit" id="saveFlightButton" class="primary">一時保存する</button>
           <button type="submit" id="saveCompletedFlightButton" class="primary" hidden>修正を保存する</button>
+          <button type="button" id="executeCancelButton" class="primary" hidden>取消しを実行する</button>
           <button type="button" id="cancelEditButton" class="subtle">キャンセル</button>
         </div>
       </form>

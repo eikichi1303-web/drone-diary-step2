@@ -1,4 +1,5 @@
 import { openStep2Database, requestResult, transactionDone } from "./db.js";
+import { isCountableCompletedFlight } from "./flightTime.js";
 
 const $ = id => document.getElementById(id);
 let db;
@@ -181,7 +182,7 @@ async function savePilot(event) {
         const flightRecord = cursor.value;
 
         if (
-          flightRecord.status === "完了" &&
+          isCountableCompletedFlight(flightRecord) &&
           !samePilotSnapshot(flightRecord.pilotSnapshot, newSnapshot)
         ) {
           historyStore.add({

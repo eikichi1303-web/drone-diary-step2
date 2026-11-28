@@ -32,9 +32,11 @@ button:disabled { opacity: .5; cursor: not-allowed; }
 .aircraft-card { border: 1px solid var(--line); border-left: 4px solid var(--gold); border-radius: 9px; padding: 14px; display: flex; justify-content: space-between; gap: 16px; align-items: center; }
 .aircraft-card h3 { margin: 0 0 5px; }
 .card-meta { color: var(--muted); font-size: .88rem; }
+.card-meta.cancel-meta { margin-top: 4px; overflow-wrap: anywhere; word-break: break-word; }
 .card-actions { display: flex; flex-wrap: wrap; gap: 7px; }
 .badge { display: inline-block; border-radius: 20px; padding: 3px 9px; font-size: .78rem; background: #e8edf4; color: var(--navy); margin-left: 6px; }
 .badge.stopped { background: #f8e9e7; color: #8a3027; }
+.badge.cancelled { background: #e5e5e5; color: #595959; border: 1px solid #bdbdbd; }
 .empty { text-align: center; padding: 24px; color: var(--muted); }
 form { margin-top: 12px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 14px; }

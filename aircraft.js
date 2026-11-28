@@ -1,5 +1,5 @@
 import { openStep2Database, requestResult, transactionDone } from "./db.js";
-import { calculateAircraftTotalFlightMinutes } from "./flightTime.js";
+import { calculateAircraftTotalFlightMinutes, isCountableCompletedFlight } from "./flightTime.js";
 
 const $ = id => document.getElementById(id);
 let db;
@@ -246,7 +246,7 @@ async function saveAircraft(event) {
         const flightRecord = cursor.value;
 
         if (
-          flightRecord.status === "完了" &&
+          isCountableCompletedFlight(flightRecord) &&
           !sameAircraftSnapshot(flightRecord.aircraftSnapshot, newSnapshot)
         ) {
           historyStore.add({
