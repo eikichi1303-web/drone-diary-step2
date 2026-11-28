@@ -110,6 +110,37 @@ function sameData(a, b) {
   return JSON.stringify(comparableAircraft(a)) === JSON.stringify(comparableAircraft(b));
 }
 
+const AIRCRAFT_SNAPSHOT_FIELDS = [
+  "name",
+  "registrationMark",
+  "aircraftType",
+  "model",
+  "typeCertificationNumber",
+  "hasAircraftCertification",
+  "aircraftCertificationClass",
+  "aircraftCertificationNumber",
+  "manufacturer",
+  "serialNumber"
+];
+
+function createAircraftSnapshot(record) {
+  return Object.fromEntries(
+    AIRCRAFT_SNAPSHOT_FIELDS.map(field => [
+      field,
+      record[field] ?? (field === "hasAircraftCertification" ? false : "")
+    ])
+  );
+}
+
+function sameAircraftSnapshot(a, b) {
+  if (!a || typeof a !== "object") return false;
+
+  return AIRCRAFT_SNAPSHOT_FIELDS.every(field => {
+    const fallback = field === "hasAircraftCertification" ? false : "";
+    return (a[field] ?? fallback) === (b[field] ?? fallback);
+  });
+}
+
 async function countFlightsForAircraft(tx, aircraftId) {
   return requestResult(
     tx.objectStore("flightRecords").index("aircraftId").count(IDBKeyRange.only(aircraftId))
@@ -199,6 +230,45 @@ async function saveAircraft(event) {
       }
       tx.objectStore("editHistories").add(history);
       tx.objectStore("aircraft").put(updated);
+
+      // 同じ機体を参照する完了記録のスナップショットを、同一トランザクション内で再取得する。
+      const flightStore = tx.objectStore("flightRecords");
+      const historyStore = tx.objectStore("editHistories");
+      const newSnapshot = createAircraftSnapshot(updated);
+      const cursorRequest = flightStore.index("aircraftId").openCursor(
+        IDBKeyRange.only(id)
+      );
+
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (!cursor) return;
+
+        const flightRecord = cursor.value;
+
+        if (
+          flightRecord.status === "完了" &&
+          !sameAircraftSnapshot(flightRecord.aircraftSnapshot, newSnapshot)
+        ) {
+          historyStore.add({
+            id: uuidV4(),
+            recordType: "flightRecord",
+            recordId: flightRecord.id,
+            previousRevision: flightRecord.revision,
+            beforeData: structuredClone(flightRecord.aircraftSnapshot),
+            editedAt: now,
+            editReason: "機体変更によるスナップショット再取得"
+          });
+
+          cursor.update({
+            ...flightRecord,
+            aircraftSnapshot: newSnapshot,
+            revision: flightRecord.revision + 1,
+            updatedAt: now
+          });
+        }
+
+        cursor.continue();
+      };
       await done;
       var saveResultMessage = "機体情報を更新し、編集履歴を保存しました。";
     }

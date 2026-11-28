@@ -1,4 +1,4 @@
-const CACHE_NAME = "DER_STEP2_CACHE_v15";
+const CACHE_NAME = "DER_STEP2_CACHE_v16";
 
 const FILES_TO_CACHE = [
   "./",
@@ -91,3 +91,4 @@ self.addEventListener("fetch", event => {
     }
   })());
 });
+

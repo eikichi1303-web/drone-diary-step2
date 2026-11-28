@@ -5,7 +5,8 @@ import {
 } from "./db.js";
 import {
   normalizeFlightMinutes,
-  isValidFlightMinutes
+  isValidFlightMinutes,
+  getMaximumAllowedFlightMinutes
 } from "./flightTime.js";
 
 const $ = id => document.getElementById(id);
@@ -17,8 +18,8 @@ let editStartedUpdatedAt = "";
 
 const STATUS_LABELS = {
   "下書き": "一時保存",
-  "飛行中": "飛行中"
-  // 工程8で「完了」を追加する。
+  "飛行中": "飛行中",
+  "完了": "完了"
 };
 
 function displayStatus(status) {
@@ -93,11 +94,15 @@ function updateActionButtons() {
   const aircraftOption = $("aircraftId").selectedOptions[0];
   const pilotOption = $("pilotId").selectedOptions[0];
   const activeSelections = aircraftOption?.dataset.status === "使用中" && pilotOption?.dataset.status === "使用中";
+
   $("takeoffButton").disabled = flightActionInProgress || isFlying || !$("aircraftId").value || !$("pilotId").value || !activeSelections;
   $("landingButton").disabled = flightActionInProgress || !hasFlightId || !isFlying;
+  $("completeFlightButton").disabled = flightActionInProgress || !hasFlightId || !isFlying;
   $("saveFlightButton").disabled = flightActionInProgress;
+
   $("takeoffButton").hidden = isFlying;
   $("landingButton").hidden = !isFlying;
+  $("completeFlightButton").hidden = !isFlying;
   $("saveFlightButton").textContent = isFlying ? "保存する" : "一時保存する";
 }
 
@@ -317,6 +322,207 @@ async function saveFlight(event) {
   } catch (error) {
     if (done) { try { await done; } catch (_) {} }
     showMessage(error.message || "保存に失敗しました。");
+  } finally {
+    flightActionInProgress = false;
+    updateActionButtons();
+  }
+}
+
+function createAircraftSnapshot(record) {
+  return {
+    name: record.name ?? "",
+    registrationMark: record.registrationMark ?? "",
+    aircraftType: record.aircraftType ?? "",
+    model: record.model ?? "",
+    typeCertificationNumber: record.typeCertificationNumber ?? "",
+    hasAircraftCertification: Boolean(record.hasAircraftCertification),
+    aircraftCertificationClass: record.aircraftCertificationClass ?? "",
+    aircraftCertificationNumber: record.aircraftCertificationNumber ?? "",
+    manufacturer: record.manufacturer ?? "",
+    serialNumber: record.serialNumber ?? ""
+  };
+}
+
+function createPilotSnapshot(record) {
+  return {
+    name: record.name ?? "",
+    hasLicense: Boolean(record.hasLicense),
+    licenseType: record.licenseType ?? "",
+    licenseNumber: record.licenseNumber ?? ""
+  };
+}
+
+function collectCompletionFlightTime(fields) {
+  if (!fields.takeoffAt || !fields.landingAt) {
+    throw new Error("完了するには、離陸日時と着陸日時を入力してください。");
+  }
+
+  const takeoffTime = new Date(fields.takeoffAt).getTime();
+  const landingTime = new Date(fields.landingAt).getTime();
+
+  if (!Number.isFinite(takeoffTime) || !Number.isFinite(landingTime)) {
+    throw new Error("日時を正しく読み取れません。");
+  }
+
+  if (landingTime < takeoffTime) {
+    throw new Error("着陸日時が離陸日時より前です。日時を確認してください。");
+  }
+
+  if (landingTime === takeoffTime) {
+    throw new Error("離陸日時と着陸日時が同じです。日時を確認してください。");
+  }
+
+  const raw = $("flightMinutesInput").value.trim();
+  let flightMinutes;
+  let manuallyAdjusted;
+
+  if (raw === "") {
+    const elapsedMinutes = (landingTime - takeoffTime) / 60000;
+    flightMinutes = normalizeFlightMinutes(Math.ceil(elapsedMinutes));
+    manuallyAdjusted = false;
+  } else {
+    if (!/^\d+$/.test(raw)) {
+      throw new Error("飛行時間は1分以上の整数で入力してください。");
+    }
+
+    const value = Number(raw);
+    if (!Number.isSafeInteger(value)) {
+      throw new Error("飛行時間は1分以上の整数で入力してください。");
+    }
+
+    // 工程8の完了条件では、入力値0を1分に読み替えず拒否する。
+    if (value === 0) {
+      throw new Error("飛行時間が1分未満です。1分以上にしてください。");
+    }
+
+    flightMinutes = normalizeFlightMinutes(value);
+    manuallyAdjusted = true;
+  }
+
+  if (!isValidFlightMinutes(flightMinutes)) {
+    throw new Error("飛行時間が1分未満です。1分以上にしてください。");
+  }
+
+  const maximumAllowed = getMaximumAllowedFlightMinutes(
+    fields.takeoffAt,
+    fields.landingAt
+  );
+
+  if (maximumAllowed === null) {
+    throw new Error("着陸日時が離陸日時より前です。日時を確認してください。");
+  }
+
+  if (flightMinutes > maximumAllowed) {
+    throw new Error("飛行時間が、離陸から着陸までの時間を超えています。");
+  }
+
+  return {
+    flightMinutes,
+    manuallyAdjusted
+  };
+}
+
+async function completeFlight() {
+  if (flightActionInProgress) return;
+  if (!$("flightId").value || currentEditStatus !== "飛行中") return;
+
+  if (!window.confirm(
+    "この記録を完了にします。完了後の修正には所定の手順が必要です。よろしいですか？"
+  )) {
+    return;
+  }
+
+  flightActionInProgress = true;
+  updateActionButtons();
+
+  let done;
+
+  try {
+    const fields = collectFormFields();
+    const completionTimeFields = collectCompletionFlightTime(fields);
+
+    if (!fields.aircraftId || !fields.pilotId) {
+      throw new Error("完了するには、機体と操縦者を選択してください。");
+    }
+
+    const id = $("flightId").value;
+    const now = new Date().toISOString();
+
+    // 完了対象の最新状態とマスタ情報を同一トランザクション内で取得する。
+    const tx = db.transaction(
+      ["flightRecords", "aircraft", "pilots"],
+      "readwrite"
+    );
+
+    let failureReason = "";
+    done = createTransactionWaiter(tx, () => failureReason);
+
+    const flightStore = tx.objectStore("flightRecords");
+
+    const [current, aircraft, pilot] = await Promise.all([
+      requestResult(flightStore.get(id)),
+      requestResult(tx.objectStore("aircraft").get(fields.aircraftId)),
+      requestResult(tx.objectStore("pilots").get(fields.pilotId))
+    ]);
+
+    if (!current) {
+      failureReason = "完了対象の飛行記録が見つかりません。";
+      tx.abort();
+      try { await done; } catch (_) {}
+      throw new Error(failureReason);
+    }
+
+    if (current.status !== "飛行中") {
+      failureReason = "完了できるのは飛行中の記録だけです。";
+      tx.abort();
+      try { await done; } catch (_) {}
+      throw new Error(failureReason);
+    }
+
+    if (editStartedUpdatedAt && current.updatedAt !== editStartedUpdatedAt) {
+      failureReason = "他の画面で更新されています。記録を開き直してください。";
+      tx.abort();
+      try { await done; } catch (_) {}
+      throw new Error(failureReason);
+    }
+
+    if (!aircraft) {
+      failureReason = "選択した機体が見つかりません。";
+      tx.abort();
+      try { await done; } catch (_) {}
+      throw new Error(failureReason);
+    }
+
+    if (!pilot) {
+      failureReason = "選択した操縦者が見つかりません。";
+      tx.abort();
+      try { await done; } catch (_) {}
+      throw new Error(failureReason);
+    }
+
+    const updated = {
+      ...current,
+      ...fields,
+      ...completionTimeFields,
+      aircraftSnapshot: createAircraftSnapshot(aircraft),
+      pilotSnapshot: createPilotSnapshot(pilot),
+      status: "完了",
+      completedAt: now,
+      updatedAt: now
+    };
+
+    // cancelledAt / cancelReason は current の値をそのまま維持する。
+    flightStore.put(updated);
+
+    await done;
+    await renderFlights();
+    closeEditor();
+    $("dbStatus").textContent = "飛行記録を完了しました。";
+  } catch (error) {
+    if (done) {
+      try { await done; } catch (_) {}
+    }
+    showMessage(error.message || "飛行記録の完了に失敗しました。");
   } finally {
     flightActionInProgress = false;
     updateActionButtons();
@@ -576,6 +782,7 @@ $("aircraftId").addEventListener("change", updateActionButtons);
 $("pilotId").addEventListener("change", updateActionButtons);
 $("takeoffButton").addEventListener("click", recordTakeoff);
 $("landingButton").addEventListener("click", recordLanding);
+$("completeFlightButton").addEventListener("click", completeFlight);
 initialize();
 
 if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
@@ -585,3 +792,4 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     });
   });
 }
+

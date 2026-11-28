@@ -3,6 +3,13 @@ import { openStep2Database, requestResult, transactionDone } from "./db.js";
 const $ = id => document.getElementById(id);
 let db;
 
+const PILOT_SNAPSHOT_FIELDS = [
+  "name",
+  "hasLicense",
+  "licenseType",
+  "licenseNumber"
+];
+
 function uuidV4() {
   if (crypto.randomUUID) return crypto.randomUUID();
   if (!crypto.getRandomValues) throw new Error("安全なIDを生成できません。このブラウザでは登録できません。");
@@ -83,6 +90,24 @@ function sameData(a, b) {
   return JSON.stringify(comparablePilot(a)) === JSON.stringify(comparablePilot(b));
 }
 
+function createPilotSnapshot(record) {
+  return Object.fromEntries(
+    PILOT_SNAPSHOT_FIELDS.map(field => [
+      field,
+      record[field] ?? (field === "hasLicense" ? false : "")
+    ])
+  );
+}
+
+function samePilotSnapshot(a, b) {
+  if (!a || typeof a !== "object") return false;
+
+  return PILOT_SNAPSHOT_FIELDS.every(field => {
+    const fallback = field === "hasLicense" ? false : "";
+    return (a[field] ?? fallback) === (b[field] ?? fallback);
+  });
+}
+
 async function savePilot(event) {
   event.preventDefault();
   try {
@@ -130,11 +155,57 @@ async function savePilot(event) {
         updatedAt: now
       };
 
-      // 操縦者本体の更新と編集履歴の追加を同一トランザクションで行う。
-      const tx = db.transaction(["pilots", "editHistories"], "readwrite");
-      tx.objectStore("editHistories").add(history);
-      tx.objectStore("pilots").put(updated);
-      await transactionDone(tx);
+      // 操縦者本体・編集履歴・完了記録のスナップショット更新を同一トランザクションで行う。
+      const tx = db.transaction(
+        ["pilots", "editHistories", "flightRecords"],
+        "readwrite"
+      );
+      const done = transactionDone(tx);
+
+      const pilotStore = tx.objectStore("pilots");
+      const historyStore = tx.objectStore("editHistories");
+      const flightStore = tx.objectStore("flightRecords");
+
+      historyStore.add(history);
+      pilotStore.put(updated);
+
+      const newSnapshot = createPilotSnapshot(updated);
+      const cursorRequest = flightStore.index("pilotId").openCursor(
+        IDBKeyRange.only(id)
+      );
+
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (!cursor) return;
+
+        const flightRecord = cursor.value;
+
+        if (
+          flightRecord.status === "完了" &&
+          !samePilotSnapshot(flightRecord.pilotSnapshot, newSnapshot)
+        ) {
+          historyStore.add({
+            id: uuidV4(),
+            recordType: "flightRecord",
+            recordId: flightRecord.id,
+            previousRevision: flightRecord.revision,
+            beforeData: structuredClone(flightRecord.pilotSnapshot),
+            editedAt: now,
+            editReason: "操縦者変更によるスナップショット再取得"
+          });
+
+          cursor.update({
+            ...flightRecord,
+            pilotSnapshot: newSnapshot,
+            revision: flightRecord.revision + 1,
+            updatedAt: now
+          });
+        }
+
+        cursor.continue();
+      };
+
+      await done;
       var saveResultMessage = "操縦者情報を更新し、編集履歴を保存しました。";
     }
 
@@ -308,3 +379,4 @@ if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     });
   });
 }
+
