@@ -149,17 +149,24 @@
           <textarea id="specialNotes" rows="3" maxlength="3000"></textarea>
         </label>
 
+        <div id="editReasonField" class="full-width" hidden>
+          <label>修正理由（必須）
+            <textarea id="editReasonInput" rows="3" maxlength="1000"></textarea>
+          </label>
+        </div>
+
         <div class="actions">
           <button type="button" id="takeoffButton" class="primary" hidden>離陸</button>
           <button type="button" id="landingButton" class="primary" hidden>着陸</button>
           <button type="button" id="completeFlightButton" class="primary" hidden>完了にする</button>
           <button type="submit" id="saveFlightButton" class="primary">一時保存する</button>
+          <button type="submit" id="saveCompletedFlightButton" class="primary" hidden>修正を保存する</button>
           <button type="button" id="cancelEditButton" class="subtle">キャンセル</button>
         </div>
-
-        <p id="formMessage" class="form-message" role="alert"></p>
       </form>
     </section>
+
+    <p id="formMessage" class="form-message" role="alert"></p>
   </main>
 
   <footer>DER FLIGHT LOG｜STEP2 確認用</footer>
