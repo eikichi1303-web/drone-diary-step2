@@ -381,12 +381,12 @@ async function recordLanding() {
   updateActionButtons();
   try {
     if (!$("flightId").value || currentEditStatus !== "飛行中") return;
-    if ($("landingAt").value && !window.confirm("入力されている着陸日時を現在時刻で上書きしますか？")) return;
     const fields = collectFormFields();
     if (!fields.aircraftId || !fields.pilotId || !fields.takeoffAt) {
       showMessage("着陸を記録するには、機体・操縦者・離陸日時が必要です。");
       return;
     }
+    if ($("landingAt").value && !window.confirm("入力されている着陸日時を現在時刻で上書きしますか？")) return;
     const nowDate = new Date();
     nowDate.setSeconds(0, 0);
     const now = nowDate.toISOString();
@@ -463,7 +463,7 @@ async function renderFlights() {
       } else {
         const backButton = document.createElement("button");
         backButton.className = "subtle";
-        backButton.textContent = "一時保存に戻す";
+        backButton.textContent = "一時保存";
         backButton.addEventListener("click", () => returnToDraft(record));
         actions.append(backButton);
       }
@@ -474,36 +474,53 @@ async function renderFlights() {
 }
 
 async function beginEdit(record) {
-  if (record.status !== "下書き" && record.status !== "飛行中") return;
-  currentEditStatus = record.status;
-  editStartedUpdatedAt = record.updatedAt || "";
-  $("flightId").value = record.id;
-  await loadAircraftAndPilots(record.aircraftId || "", record.pilotId || "");
-  $("purpose").value = record.purpose ?? "";
-  $("route").value = record.route ?? "";
-  $("waypoints").value = record.waypoints ?? "";
-  if (record.prohibitedAirspace === "該当なし") {
-    $("prohibitedAirspaceNone").checked = true; $("prohibitedAirspace").value = "";
-  } else {
-    $("prohibitedAirspaceNone").checked = false; $("prohibitedAirspace").value = record.prohibitedAirspace ?? "";
+  try {
+    let targetRecord = record;
+    if (record.status === "飛行中") {
+      const tx = db.transaction(["flightRecords"], "readonly");
+      targetRecord = await requestResult(tx.objectStore("flightRecords").get(record.id));
+      await transactionDone(tx);
+      if (!targetRecord || targetRecord.status !== "飛行中") {
+        await renderFlights();
+        $("dbStatus").textContent = "記録が他の画面で更新されています。一覧を最新の状態にしました。";
+        return;
+      }
+    }
+
+    if (targetRecord.status !== "下書き" && targetRecord.status !== "飛行中") return;
+    currentEditStatus = targetRecord.status;
+    editStartedUpdatedAt = targetRecord.updatedAt || "";
+    $("flightId").value = targetRecord.id;
+    await loadAircraftAndPilots(targetRecord.aircraftId || "", targetRecord.pilotId || "");
+    $("purpose").value = targetRecord.purpose ?? "";
+    $("route").value = targetRecord.route ?? "";
+    $("waypoints").value = targetRecord.waypoints ?? "";
+    if (targetRecord.prohibitedAirspace === "該当なし") {
+      $("prohibitedAirspaceNone").checked = true; $("prohibitedAirspace").value = "";
+    } else {
+      $("prohibitedAirspaceNone").checked = false; $("prohibitedAirspace").value = targetRecord.prohibitedAirspace ?? "";
+    }
+    if (targetRecord.flightMethod === "該当なし") {
+      $("flightMethodNone").checked = true; $("flightMethod").value = "";
+    } else {
+      $("flightMethodNone").checked = false; $("flightMethod").value = targetRecord.flightMethod ?? "";
+    }
+    updateProhibitedAirspaceField(); updateFlightMethodField();
+    $("takeoffLocation").value = targetRecord.takeoffLocation ?? "";
+    $("takeoffAt").value = utcToJapanDateTime(targetRecord.takeoffAt);
+    $("landingLocation").value = targetRecord.landingLocation ?? "";
+    $("landingAt").value = utcToJapanDateTime(targetRecord.landingAt);
+    $("flightMinutesInput").value = targetRecord.flightMinutes === null || targetRecord.flightMinutes === undefined ? "" : String(targetRecord.flightMinutes);
+    $("safetyIssue").value = targetRecord.safetyIssue ?? "";
+    $("safetyDetails").value = targetRecord.safetyDetails ?? "";
+    $("aircraftCondition").value = targetRecord.aircraftCondition ?? "";
+    updateSafetyFields();
+    $("specialNotes").value = targetRecord.specialNotes ?? "";
+    showEditor(true);
+  } catch (error) {
+    closeEditor();
+    $("dbStatus").textContent = error.message || "飛行記録を開けませんでした。";
   }
-  if (record.flightMethod === "該当なし") {
-    $("flightMethodNone").checked = true; $("flightMethod").value = "";
-  } else {
-    $("flightMethodNone").checked = false; $("flightMethod").value = record.flightMethod ?? "";
-  }
-  updateProhibitedAirspaceField(); updateFlightMethodField();
-  $("takeoffLocation").value = record.takeoffLocation ?? "";
-  $("takeoffAt").value = utcToJapanDateTime(record.takeoffAt);
-  $("landingLocation").value = record.landingLocation ?? "";
-  $("landingAt").value = utcToJapanDateTime(record.landingAt);
-  $("flightMinutesInput").value = record.flightMinutes === null || record.flightMinutes === undefined ? "" : String(record.flightMinutes);
-  $("safetyIssue").value = record.safetyIssue ?? "";
-  $("safetyDetails").value = record.safetyDetails ?? "";
-  $("aircraftCondition").value = record.aircraftCondition ?? "";
-  updateSafetyFields();
-  $("specialNotes").value = record.specialNotes ?? "";
-  showEditor(true);
 }
 
 async function deleteFlight(record) {
